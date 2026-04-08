@@ -10,26 +10,21 @@ Examples:
   OpenAI:  https://api.openai.com/v1
 """
 import json
+import re
 import httpx
-from typing import Optional
 from app.core.config import settings
 
 
 class AIProvider:
     def __init__(self):
-        self.base_url = settings.AI_BASE_URL
+        self.base_url = settings.AI_BASE_URL.rstrip("/")
         self.model = settings.AI_MODEL
         self.api_key = settings.AI_API_KEY
 
-    async def complete(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        json_mode: bool = False,
-    ) -> str:
+    async def complete(self, system_prompt: str, user_prompt: str) -> str:
         """Send a completion request to the configured AI provider."""
         if not self.api_key:
-            return '{"error": "AI_API_KEY not configured"}'
+            raise ValueError("AI_API_KEY is not set in .env")
 
         headers = {
             "Content-Type": "application/json",
@@ -45,10 +40,7 @@ class AIProvider:
             "temperature": 0.3,
         }
 
-        if json_mode:
-            payload["response_format"] = {"type": "json_object"}
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
                 headers=headers,
@@ -59,15 +51,48 @@ class AIProvider:
             return data["choices"][0]["message"]["content"]
 
     async def complete_json(self, system_prompt: str, user_prompt: str) -> dict:
-        """Complete and parse JSON response."""
-        raw = await self.complete(system_prompt, user_prompt, json_mode=True)
+        """
+        Complete and parse JSON response.
+        Does NOT use response_format: json_object since not all providers/models
+        support it (including Gemini 2.5 Pro). Instead we enforce via prompt
+        and parse defensively.
+        """
+        enforced_system = (
+            system_prompt.strip()
+            + "\n\nIMPORTANT: Respond with valid JSON only. "
+            "Do not include any text before or after the JSON. "
+            "Do not wrap in markdown code blocks."
+        )
+
+        raw = await self.complete(enforced_system, user_prompt)
+        return self._parse_json(raw)
+
+    def _parse_json(self, raw: str) -> dict:
+        """Robustly parse JSON from model output, handling common formatting issues."""
+        text = raw.strip()
+
+        # Remove markdown code fences: ```json ... ``` or ``` ... ```
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
+        text = re.sub(r"\s*```$", "", text, flags=re.MULTILINE)
+        text = text.strip()
+
+        # Try direct parse first
         try:
-            return json.loads(raw)
+            return json.loads(text)
         except json.JSONDecodeError:
-            # Strip markdown fences if model wraps in ```json
-            cleaned = raw.strip().removeprefix("```json").removesuffix("```").strip()
-            return json.loads(cleaned)
+            pass
+
+        # Try to extract JSON object from surrounding text
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                pass
+
+        # Safe fallback — app never crashes on bad AI output
+        return {"error": "Failed to parse AI response", "raw": text[:500]}
 
 
-# Singleton instance — import this everywhere
+# Singleton — import this everywhere
 ai = AIProvider()

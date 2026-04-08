@@ -7,3 +7,4 @@ frontend/.next/
 # Backend
 __pycache__/
 venv/
+testlink.db
