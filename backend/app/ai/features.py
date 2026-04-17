@@ -11,7 +11,7 @@ from app.ai.provider import ai
 async def generate_test_case(feature_description: str) -> dict:
     """
     Given a plain-English feature description, return a structured test case.
-    User explicitly clicks 'Generate with AI' — this is never auto-triggered.
+    User explicitly clicks 'Generate with AI' — never auto-triggered.
     """
     system = """You are a senior QA engineer. Given a feature description, generate a 
 structured test case in JSON format. Be precise, practical, and thorough.
@@ -71,25 +71,29 @@ Failure Description: {failure_description}"""
 # ── Feature 3: Report Insights ────────────────────────────────────────────────
 async def generate_report_insights(report_data: dict) -> dict:
     """
-    Given aggregated report metrics, return natural language insights.
+    Given aggregated report metrics AND actual defect/test case content,
+    return natural language insights grounded in real data.
     Shown in a collapsible 'AI Insights' section below report charts.
     """
-    system = """You are a QA analyst providing test report insights. 
-Be concise, specific, and actionable. Avoid generic statements.
+    system = """You are a QA analyst providing test report insights.
+You have access to both the metrics summary AND the actual defect and test case details.
+Reference specific defects and test cases by name in your insights — be concrete, not generic.
+Avoid vague statements like "defects need resolution". Instead say things like
+"The defect 'Backend is not working' is currently open and critical — this should be prioritized."
 
 Return ONLY valid JSON:
 {
-  "summary": "1-2 sentence overall health summary",
+  "summary": "1-2 sentence overall health summary referencing actual data",
   "insights": [
-    "specific observation 1",
-    "specific observation 2",
-    "specific observation 3"
+    "specific observation referencing actual defect or test case names",
+    "another specific observation",
+    "another specific observation"
   ],
-  "risk_areas": ["area 1", "area 2"],
-  "recommendations": ["action 1", "action 2"]
+  "risk_areas": ["specific risk area 1", "specific risk area 2"],
+  "recommendations": ["specific actionable recommendation 1", "specific actionable recommendation 2"]
 }"""
 
-    user = f"Analyze this test report data and provide insights:\n{report_data}"
+    user = f"Analyze this test report and provide specific, grounded insights:\n{report_data}"
     return await ai.complete_json(system, user)
 
 

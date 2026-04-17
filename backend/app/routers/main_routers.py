@@ -360,9 +360,61 @@ async def ai_report_insights(
     project_id: str = None,
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db),
 ):
-    """AI Feature 3 — generate insights from report data. User clicks 'Generate Insights'."""
+    """AI Feature 3 — generate insights from real report data including actual defect content."""
+    org_id = current_user.organization_id
+
+    # Aggregate summary
     summary = get_report_summary(project_id=project_id, current_user=current_user, db=db)
-    result = await generate_report_insights(summary)
+
+    # Actual defects with titles and descriptions
+    defect_q = db.query(Defect).filter(Defect.organization_id == org_id)
+    if project_id:
+        defect_q = defect_q.filter(Defect.test_case_id.in_(
+            db.query(TestCase.id).filter(TestCase.project_id == project_id)
+        ))
+    defects = defect_q.order_by(Defect.created_at.desc()).limit(20).all()
+
+    # Actual test cases
+    case_q = db.query(TestCase).filter(TestCase.organization_id == org_id)
+    if project_id:
+        case_q = case_q.filter(TestCase.project_id == project_id)
+    cases = case_q.limit(30).all()
+
+    # Recent executions with comments
+    exec_q = db.query(ExecutionRecord).filter(ExecutionRecord.organization_id == org_id)
+    recent_executions = exec_q.order_by(ExecutionRecord.executed_at.desc()).limit(10).all()
+
+    # Rich context with actual content
+    rich_context = {
+        "summary_stats": summary,
+        "defects": [
+            {
+                "title": d.title,
+                "description": d.description or "No description provided",
+                "severity": d.severity,
+                "priority": d.priority,
+                "status": d.status,
+            }
+            for d in defects
+        ],
+        "test_cases": [
+            {
+                "title": tc.title,
+                "status": tc.status,
+                "priority": tc.priority,
+            }
+            for tc in cases
+        ],
+        "recent_executions": [
+            {
+                "result": ex.result_status,
+                "comments": ex.comments or "",
+            }
+            for ex in recent_executions
+        ],
+    }
+
+    result = await generate_report_insights(rich_context)
     return result
 
 
