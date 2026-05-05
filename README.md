@@ -137,7 +137,7 @@ testlink-reimplementation/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/testlink-reimplementation.git
+git clone https://github.com/Pavan2027/testlink-rebuild.git
 cd testlink-reimplementation
 ```
 
